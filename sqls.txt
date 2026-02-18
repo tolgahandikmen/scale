@@ -1,0 +1,257 @@
+﻿-- PostgreSQL DDL for Calibration Sheet Management
+-- Generated for frontend contract in src/models/form.ts
+
+BEGIN;
+
+-- 1) Enums
+CREATE TYPE template_kind AS ENUM ('INPUT', 'OUTPUT');
+CREATE TYPE field_type AS ENUM ('TEXT', 'NUMBER', 'DATE', 'DROPDOWN', 'BOOLEAN', 'TABLE');
+CREATE TYPE unit_mode AS ENUM ('NONE', 'OPTIONAL', 'REQUIRED');
+CREATE TYPE field_value_type AS ENUM ('TEXT', 'NUMBER', 'DATE', 'BOOLEAN', 'DROPDOWN', 'MULTI', 'TABLE');
+
+-- 2) Core master data: item uniquely identified by (part_id, part_sn, bridge_name)
+CREATE TABLE items (
+  id BIGSERIAL PRIMARY KEY,
+  part_id TEXT NOT NULL,
+  part_sn TEXT NOT NULL,
+  bridge_name TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (part_id, part_sn, bridge_name)
+);
+
+CREATE INDEX idx_items_part_id ON items(part_id);
+CREATE INDEX idx_items_part_sn ON items(part_sn);
+CREATE INDEX idx_items_bridge_name ON items(bridge_name);
+
+-- 3) Versioned templates
+CREATE TABLE sheet_templates (
+  id BIGSERIAL PRIMARY KEY,
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  kind template_kind NOT NULL,
+  version INTEGER NOT NULL CHECK (version > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (code, version)
+);
+
+CREATE INDEX idx_sheet_templates_kind ON sheet_templates(kind);
+CREATE INDEX idx_sheet_templates_code ON sheet_templates(code);
+
+-- 4) Part -> allowed template mapping (configuration)
+-- Different part_id values can use different input/output templates.
+CREATE TABLE part_template_mappings (
+  id BIGSERIAL PRIMARY KEY,
+  part_id TEXT NOT NULL,
+  template_kind template_kind NOT NULL,
+  template_id BIGINT NOT NULL REFERENCES sheet_templates(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (part_id, template_kind, template_id)
+);
+
+CREATE INDEX idx_part_template_mappings_part_id ON part_template_mappings(part_id);
+CREATE INDEX idx_part_template_mappings_template_id ON part_template_mappings(template_id);
+
+-- 5) Template fields (dynamic)
+CREATE TABLE field_definitions (
+  id BIGSERIAL PRIMARY KEY,
+  template_id BIGINT NOT NULL REFERENCES sheet_templates(id) ON DELETE CASCADE,
+  key TEXT NOT NULL,
+  label TEXT NOT NULL,
+  type field_type NOT NULL,
+  required BOOLEAN NOT NULL DEFAULT FALSE,
+  order_no INTEGER NOT NULL DEFAULT 10,
+  group_key TEXT,
+
+  is_multi BOOLEAN NOT NULL DEFAULT FALSE,
+  multi_keys TEXT[] NOT NULL DEFAULT '{}',
+  unit_mode unit_mode NOT NULL DEFAULT 'NONE',
+  unit_options TEXT[] NOT NULL DEFAULT '{}',
+  dropdown_options TEXT[] NOT NULL DEFAULT '{}',
+  table_schema JSONB,
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  UNIQUE (template_id, key),
+  CHECK ((type = 'TABLE' AND table_schema IS NOT NULL) OR (type <> 'TABLE'))
+);
+
+CREATE INDEX idx_field_definitions_template_id ON field_definitions(template_id);
+CREATE INDEX idx_field_definitions_type ON field_definitions(type);
+
+-- 6) Sheet instances
+-- INPUT sheet: parent_sheet_id/output_template_id are NULL
+-- OUTPUT sheet: both are NOT NULL and unique per (input_sheet_id, output_template_id)
+CREATE TABLE sheet_instances (
+  id BIGSERIAL PRIMARY KEY,
+  item_id BIGINT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  template_id BIGINT NOT NULL REFERENCES sheet_templates(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  sheet_date DATE,
+
+  parent_sheet_id BIGINT REFERENCES sheet_instances(id) ON DELETE CASCADE,
+  output_template_id BIGINT REFERENCES sheet_templates(id),
+
+  CHECK (
+    (parent_sheet_id IS NULL AND output_template_id IS NULL)
+    OR
+    (parent_sheet_id IS NOT NULL AND output_template_id IS NOT NULL)
+  )
+);
+
+-- Enforce: for a given INPUT sheet and OUTPUT format, only one OUTPUT exists.
+CREATE UNIQUE INDEX uq_sheet_instances_input_output_format
+  ON sheet_instances(parent_sheet_id, output_template_id)
+  WHERE parent_sheet_id IS NOT NULL;
+
+CREATE INDEX idx_sheet_instances_item_id ON sheet_instances(item_id);
+CREATE INDEX idx_sheet_instances_template_id ON sheet_instances(template_id);
+CREATE INDEX idx_sheet_instances_parent_sheet_id ON sheet_instances(parent_sheet_id);
+
+-- 7) Field values per sheet
+-- value_json examples:
+-- TEXT/DATE/DROPDOWN: {"value":"..."}
+-- NUMBER: {"value":12.3,"unit":"kN"}
+-- BOOLEAN: {"value":true}
+-- MULTI: {"value":{"from":1,"to":2},"unit":"C"}
+-- TABLE: {"value":{"rows":[{"percent":0,"kn":0.0}]}}
+CREATE TABLE sheet_values (
+  id BIGSERIAL PRIMARY KEY,
+  sheet_id BIGINT NOT NULL REFERENCES sheet_instances(id) ON DELETE CASCADE,
+  field_definition_id BIGINT NOT NULL REFERENCES field_definitions(id) ON DELETE RESTRICT,
+  value_type field_value_type NOT NULL,
+  value_json JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (sheet_id, field_definition_id)
+);
+
+CREATE INDEX idx_sheet_values_sheet_id ON sheet_values(sheet_id);
+CREATE INDEX idx_sheet_values_field_definition_id ON sheet_values(field_definition_id);
+CREATE INDEX idx_sheet_values_value_json_gin ON sheet_values USING GIN (value_json);
+
+-- 8) Optional integrity triggers (recommended)
+-- 8.1 Ensure:
+--   - INPUT/OUTPUT template-kind correctness
+--   - OUTPUT template_id equals output_template_id
+--   - selected templates are allowed for that item's part_id by part_template_mappings
+CREATE OR REPLACE FUNCTION trg_validate_sheet_instance_kind()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_template_kind template_kind;
+  v_output_kind template_kind;
+  v_parent_template_kind template_kind;
+  v_item_part_id TEXT;
+  v_allowed_count INTEGER;
+BEGIN
+  SELECT kind INTO v_template_kind FROM sheet_templates WHERE id = NEW.template_id;
+  SELECT part_id INTO v_item_part_id FROM items WHERE id = NEW.item_id;
+
+  IF NEW.parent_sheet_id IS NULL THEN
+    IF v_template_kind <> 'INPUT' THEN
+      RAISE EXCEPTION 'template_id % must be INPUT when parent_sheet_id is NULL', NEW.template_id;
+    END IF;
+
+    SELECT COUNT(*) INTO v_allowed_count
+    FROM part_template_mappings m
+    WHERE m.part_id = v_item_part_id
+      AND m.template_kind = 'INPUT'
+      AND m.template_id = NEW.template_id;
+
+    IF v_allowed_count = 0 THEN
+      RAISE EXCEPTION 'template_id % is not allowed for part_id % (INPUT)', NEW.template_id, v_item_part_id;
+    END IF;
+  ELSE
+    SELECT kind INTO v_output_kind FROM sheet_templates WHERE id = NEW.output_template_id;
+    IF v_output_kind <> 'OUTPUT' THEN
+      RAISE EXCEPTION 'output_template_id % must be OUTPUT', NEW.output_template_id;
+    END IF;
+
+    IF NEW.template_id <> NEW.output_template_id THEN
+      RAISE EXCEPTION 'For OUTPUT sheet, template_id (%) must equal output_template_id (%)', NEW.template_id, NEW.output_template_id;
+    END IF;
+
+    SELECT t.kind INTO v_parent_template_kind
+    FROM sheet_instances s
+    JOIN sheet_templates t ON t.id = s.template_id
+    WHERE s.id = NEW.parent_sheet_id;
+
+    IF v_parent_template_kind <> 'INPUT' THEN
+      RAISE EXCEPTION 'parent_sheet_id % must reference an INPUT sheet', NEW.parent_sheet_id;
+    END IF;
+
+    SELECT COUNT(*) INTO v_allowed_count
+    FROM part_template_mappings m
+    WHERE m.part_id = v_item_part_id
+      AND m.template_kind = 'OUTPUT'
+      AND m.template_id = NEW.output_template_id;
+
+    IF v_allowed_count = 0 THEN
+      RAISE EXCEPTION 'output_template_id % is not allowed for part_id % (OUTPUT)', NEW.output_template_id, v_item_part_id;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER validate_sheet_instance_kind
+BEFORE INSERT OR UPDATE ON sheet_instances
+FOR EACH ROW
+EXECUTE FUNCTION trg_validate_sheet_instance_kind();
+
+-- 8.2 Ensure mapping.template_kind equals actual sheet_templates.kind
+CREATE OR REPLACE FUNCTION trg_validate_part_template_mapping_kind()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_kind template_kind;
+BEGIN
+  SELECT kind INTO v_kind FROM sheet_templates WHERE id = NEW.template_id;
+  IF v_kind IS NULL THEN
+    RAISE EXCEPTION 'template_id % not found', NEW.template_id;
+  END IF;
+
+  IF v_kind <> NEW.template_kind THEN
+    RAISE EXCEPTION 'template_id % kind is %, cannot be stored as %', NEW.template_id, v_kind, NEW.template_kind;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER validate_part_template_mapping_kind
+BEFORE INSERT OR UPDATE ON part_template_mappings
+FOR EACH ROW
+EXECUTE FUNCTION trg_validate_part_template_mapping_kind();
+
+-- 8.3 Ensure sheet_values.field_definition_id belongs to sheet.template_id
+CREATE OR REPLACE FUNCTION trg_validate_sheet_value_template_match()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_sheet_template_id BIGINT;
+  v_field_template_id BIGINT;
+BEGIN
+  SELECT template_id INTO v_sheet_template_id FROM sheet_instances WHERE id = NEW.sheet_id;
+  SELECT template_id INTO v_field_template_id FROM field_definitions WHERE id = NEW.field_definition_id;
+
+  IF v_sheet_template_id IS NULL OR v_field_template_id IS NULL THEN
+    RAISE EXCEPTION 'Invalid sheet_id (%) or field_definition_id (%)', NEW.sheet_id, NEW.field_definition_id;
+  END IF;
+
+  IF v_sheet_template_id <> v_field_template_id THEN
+    RAISE EXCEPTION 'field_definition_id % does not belong to sheet template %', NEW.field_definition_id, v_sheet_template_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER validate_sheet_value_template_match
+BEFORE INSERT OR UPDATE ON sheet_values
+FOR EACH ROW
+EXECUTE FUNCTION trg_validate_sheet_value_template_match();
+
+COMMIT;

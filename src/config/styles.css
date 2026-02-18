@@ -1,0 +1,14 @@
+﻿:root {
+  --app-ink: #1e2533;
+}
+
+body {
+  margin: 0;
+  font-family: Bahnschrift, 'Trebuchet MS', 'Gill Sans MT', sans-serif;
+  color: var(--app-ink);
+  background: #edf1f6;
+}
+
+#app {
+  min-height: 100vh;
+}
