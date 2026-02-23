@@ -1,41 +1,39 @@
 ﻿<script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import Button from 'primevue/button';
+
 import ItemTree from '@/components/tree/ItemTree.vue';
 import SheetList from '@/components/forms/SheetList.vue';
 import NewSheetDialog from '@/components/forms/NewSheetDialog.vue';
 import SheetDocumentPreview from '@/components/forms/SheetDocumentPreview.vue';
+
 import type { FieldDefinition, SheetInstance, SheetTemplate, ValuesMap } from '@/models/form';
-import { listItemSheets, listInputOutputs, getSheet } from '@/api/sheetsApi';
-import { getTemplateFields, getTemplates } from '@/api/templatesApi';
-import { getItemById } from '@/api/itemsApi';
-import { getTemplatesForPart } from '@/api/partTemplateMappingsApi';
-import Button from 'primevue/button';
+import scaleService from '@/services/ScaleService';
+
+type HistoricalBundle = {
+  input: SheetInstance;
+  outputs: SheetInstance[];
+};
 
 const selectedItemId = ref<number | null>(null);
+const selectedPartId = ref<string | null>(null);
 
 const inputSheets = ref<SheetInstance[]>([]);
-const selectedInput = ref<SheetInstance | null>(null);
+const historicalRecords = ref<HistoricalBundle[]>([]);
+const selectedRecordInputId = ref<number | null>(null);
+const selectedOutputId = ref<number | null>(null);
 
-const outputSheets = ref<SheetInstance[]>([]);
-
-const showNewInput = ref(false);
-const showNewOutput = ref(false);
-const selectedInputValues = ref<ValuesMap>({});
 const selectedInputFields = ref<FieldDefinition[]>([]);
+const selectedInputValues = ref<ValuesMap>({});
+const selectedOutputFields = ref<FieldDefinition[]>([]);
+const selectedOutputValues = ref<ValuesMap>({});
+
 const templateLookup = ref<Record<number, SheetTemplate>>({});
-const historicalRecords = ref<Array<{ input: SheetInstance; outputs: SheetInstance[] }>>([]);
-const selectedPartId = ref<string | null>(null);
 const allowedInputTemplateIds = ref<number[]>([]);
 const allowedOutputTemplateIds = ref<number[]>([]);
 
-const canCreate = computed(() => selectedItemId.value != null);
-const canCreateOutput = computed(() => selectedItemId.value != null && selectedInput.value != null);
-const allowedInputTemplateNames = computed(() =>
-  allowedInputTemplateIds.value.map((id) => templateNames.value[id] ?? `Template ${id}`),
-);
-const allowedOutputTemplateNames = computed(() =>
-  allowedOutputTemplateIds.value.map((id) => templateNames.value[id] ?? `Template ${id}`),
-);
+const showNewInput = ref(false);
+const showNewOutput = ref(false);
 
 const templateNames = computed<Record<number, string>>(() => {
   const map: Record<number, string> = {};
@@ -45,69 +43,48 @@ const templateNames = computed<Record<number, string>>(() => {
   return map;
 });
 
+const selectedRecord = computed<HistoricalBundle | null>(() => {
+  if (!selectedRecordInputId.value) return null;
+  return historicalRecords.value.find((r) => r.input.id === selectedRecordInputId.value) ?? null;
+});
+
+const selectedInput = computed<SheetInstance | null>(() => selectedRecord.value?.input ?? null);
+
 const selectedInputTemplateName = computed(() => {
-  if (!selectedInput.value) return 'Calibration Input';
+  if (!selectedInput.value) return 'Input Sheet';
   return templateNames.value[selectedInput.value.templateId] ?? `Template ${selectedInput.value.templateId}`;
 });
 
-const loadProfile = [0, 20, 40, 60, 80, 100, 80, 60, 40, 20, 0];
+const selectedOutput = computed<SheetInstance | null>(() => {
+  if (!selectedOutputId.value || !selectedRecord.value) return null;
+  return selectedRecord.value.outputs.find((o) => o.id === selectedOutputId.value) ?? null;
+});
 
-const positiveProfile = computed(() =>
-  loadProfile.map((p) => ({
-    percent: `${p}%`,
-    kn: (p / 100 * 2.2).toFixed(1),
-    mvv: (p / 100 * 0.184).toFixed(3),
-  })),
-);
+const selectedOutputTemplateName = computed(() => {
+  if (!selectedOutput.value) return 'Output Sheet';
+  return templateNames.value[selectedOutput.value.templateId] ?? `Template ${selectedOutput.value.templateId}`;
+});
 
-const negativeProfile = computed(() =>
-  loadProfile.map((p) => ({
-    percent: `${p}%`,
-    kn: (-(p / 100) * 1.0).toFixed(1),
-    mvv: (-(p / 100) * 0.084).toFixed(3),
-  })),
-);
+const canCreate = computed(() => selectedItemId.value != null);
+const canCreateOutput = computed(() => selectedItemId.value != null && selectedInput.value != null);
 
-async function loadInputs() {
-  if (!selectedItemId.value) return;
-  inputSheets.value = await listItemSheets(selectedItemId.value, 'INPUT');
-  if (inputSheets.value.length && !selectedInput.value) selectedInput.value = inputSheets.value[0];
-  await loadHistory();
+function getSheetTimestamp(sheet: SheetInstance): number {
+  const raw = sheet.sheetDate ?? sheet.createdAt;
+  const ts = Date.parse(raw);
+  return Number.isNaN(ts) ? 0 : ts;
 }
 
-async function loadOutputs() {
-  if (!selectedInput.value) {
-    outputSheets.value = [];
-    selectedInputFields.value = [];
-    selectedInputValues.value = {};
-    return;
-  }
-  outputSheets.value = await listInputOutputs(selectedInput.value.id);
-  const detail = await getSheet(selectedInput.value.id);
-  selectedInputValues.value = detail.values;
-  selectedInputFields.value = await getTemplateFields(selectedInput.value.templateId);
-}
-
-async function loadHistory() {
-  if (!selectedItemId.value) {
-    historicalRecords.value = [];
-    return;
-  }
-
-  const orderedInputs = [...inputSheets.value].sort((a, b) => b.id - a.id);
-  const bundles = await Promise.all(
-    orderedInputs.map(async (input) => ({
-      input,
-      outputs: await listInputOutputs(input.id),
-    })),
-  );
-  historicalRecords.value = bundles;
+function sortByLatest(sheets: SheetInstance[]): SheetInstance[] {
+  return [...sheets].sort((a, b) => getSheetTimestamp(b) - getSheetTimestamp(a));
 }
 
 async function loadTemplateLookup() {
-  const [inputs, outputs] = await Promise.all([getTemplates('INPUT'), getTemplates('OUTPUT')]);
-  const all = [...inputs, ...outputs];
-  templateLookup.value = all.reduce<Record<number, SheetTemplate>>((acc, t) => {
+  const [inputs, outputs] = await Promise.all([
+    scaleService.getTemplates('INPUT'),
+    scaleService.getTemplates('OUTPUT'),
+  ]);
+
+  templateLookup.value = [...inputs, ...outputs].reduce<Record<number, SheetTemplate>>((acc, t) => {
     acc[t.id] = t;
     return acc;
   }, {});
@@ -121,7 +98,7 @@ async function loadPartTemplateRules() {
     return;
   }
 
-  const item = await getItemById(selectedItemId.value);
+  const item = await scaleService.getItemById(selectedItemId.value);
   selectedPartId.value = item?.partId ?? null;
 
   if (!item?.partId) {
@@ -130,29 +107,107 @@ async function loadPartTemplateRules() {
     return;
   }
 
-  const rules = await getTemplatesForPart(item.partId);
+  const rules = await scaleService.getTemplatesForPart(item.partId);
   allowedInputTemplateIds.value = rules.inputTemplateIds;
   allowedOutputTemplateIds.value = rules.outputTemplateIds;
 }
 
+function openNewRecordDialog() {
+  if (!canCreate.value) return;
+  showNewInput.value = true;
+}
+
+async function loadHistory(preferLatest = false) {
+  if (!selectedItemId.value) {
+    inputSheets.value = [];
+    historicalRecords.value = [];
+    selectedRecordInputId.value = null;
+    selectedOutputId.value = null;
+    return;
+  }
+
+  const inputs = await scaleService.listItemSheets(selectedItemId.value, 'INPUT');
+  const orderedInputs = sortByLatest(inputs);
+  inputSheets.value = orderedInputs;
+
+  const bundles = await Promise.all(
+    orderedInputs.map(async (input) => ({
+      input,
+      outputs: sortByLatest(await scaleService.listInputOutputs(input.id)),
+    })),
+  );
+
+  historicalRecords.value = bundles;
+
+  if (preferLatest) {
+    selectedRecordInputId.value = bundles[0]?.input.id ?? null;
+    return;
+  }
+
+  const selectedStillExists = bundles.some((b) => b.input.id === selectedRecordInputId.value);
+  if (!selectedStillExists) {
+    selectedRecordInputId.value = bundles[0]?.input.id ?? null;
+  }
+}
+
+async function loadSelectedInputDocument() {
+  if (!selectedInput.value) {
+    selectedInputFields.value = [];
+    selectedInputValues.value = {};
+    return;
+  }
+
+  const [detail, fields] = await Promise.all([
+    scaleService.getSheet(selectedInput.value.id),
+    scaleService.getTemplateFields(selectedInput.value.templateId),
+  ]);
+
+  selectedInputValues.value = detail.values;
+  selectedInputFields.value = fields;
+}
+
+async function loadSelectedOutputDocument() {
+  if (!selectedOutput.value) {
+    selectedOutputFields.value = [];
+    selectedOutputValues.value = {};
+    return;
+  }
+
+  const [detail, fields] = await Promise.all([
+    scaleService.getSheet(selectedOutput.value.id),
+    scaleService.getTemplateFields(selectedOutput.value.templateId),
+  ]);
+
+  selectedOutputValues.value = detail.values;
+  selectedOutputFields.value = fields;
+}
+
 watch(selectedItemId, async () => {
-  selectedInput.value = null;
+  selectedRecordInputId.value = null;
+  selectedOutputId.value = null;
   await loadPartTemplateRules();
-  await loadInputs();
-  await loadOutputs();
+  await loadHistory();
 });
 
-watch(selectedInput, async () => {
-  await loadOutputs();
+watch(selectedRecord, async (record) => {
+  if (record) {
+    selectedOutputId.value = record.outputs[0]?.id ?? null;
+  } else {
+    selectedOutputId.value = null;
+  }
+
+  await loadSelectedInputDocument();
+});
+
+watch(selectedOutput, async () => {
+  await loadSelectedOutputDocument();
 });
 
 async function afterSavedInput() {
-  await loadInputs();
-  await loadOutputs();
+  await loadHistory(true);
 }
 
 async function afterSavedOutput() {
-  await loadOutputs();
   await loadHistory();
 }
 
@@ -169,28 +224,8 @@ loadTemplateLookup();
       </div>
       <div class="hero-stats">
         <div class="stat-pill">ITEM {{ selectedItemId ?? '-' }}</div>
-        <div class="stat-pill">INPUT {{ inputSheets.length }}</div>
-        <div class="stat-pill">OUTPUT {{ outputSheets.length }}</div>
-      </div>
-    </section>
-
-    <section v-if="selectedPartId" class="elite-panel mb-3">
-      <div class="panel-head mb-2">Part-Template Rules</div>
-      <div class="rule-grid">
-        <div>
-          <small class="p-text-secondary block mb-1">Allowed INPUT templates</small>
-          <div class="rule-tags">
-            <span v-for="name in allowedInputTemplateNames" :key="name">{{ name }}</span>
-            <small v-if="allowedInputTemplateNames.length === 0" class="p-text-secondary">No rule configured</small>
-          </div>
-        </div>
-        <div>
-          <small class="p-text-secondary block mb-1">Allowed OUTPUT templates</small>
-          <div class="rule-tags">
-            <span v-for="name in allowedOutputTemplateNames" :key="name">{{ name }}</span>
-            <small v-if="allowedOutputTemplateNames.length === 0" class="p-text-secondary">No rule configured</small>
-          </div>
-        </div>
+        <div class="stat-pill">RECORD {{ historicalRecords.length }}</div>
+        <div class="stat-pill">OUT {{ selectedRecord?.outputs.length ?? 0 }}</div>
       </div>
     </section>
 
@@ -204,98 +239,100 @@ loadTemplateLookup();
 
       <div class="col-12 xl:col-4">
         <section class="elite-panel h-full">
-          <SheetList
-            title="Input Sheets"
-            :sheets="inputSheets"
-            :selectedId="selectedInput?.id ?? null"
-            :templateNames="templateNames"
-            @select="(s) => (selectedInput = s)"
-          >
-            <template #actions>
-              <Button label="New Input" icon="pi pi-plus" size="small" :disabled="!canCreate" @click="showNewInput = true" />
-            </template>
-          </SheetList>
-        </section>
-      </div>
-
-      <div class="col-12 xl:col-5">
-        <section class="elite-panel h-full">
-          <SheetList title="Output Sheets" :sheets="outputSheets" :selectedId="null" :templateNames="templateNames" @select="() => {}">
-            <template #actions>
-              <Button label="New Output" icon="pi pi-plus" size="small" :disabled="!canCreateOutput" @click="showNewOutput = true" />
-            </template>
-          </SheetList>
-
-          <div v-if="selectedInput" class="output-visual mt-3">
-            <div class="visual-title">Output Profile Preview</div>
-            <div class="grid mt-2">
-              <div class="col-12 md:col-6">
-                <table class="load-table blue">
-                  <thead>
-                    <tr><th>%</th><th>kN</th><th>mV/V</th></tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="r in positiveProfile" :key="`p-${r.percent}-${r.kn}`">
-                      <td>{{ r.percent }}</td><td>{{ r.kn }}</td><td>{{ r.mvv }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div class="col-12 md:col-6">
-                <table class="load-table red">
-                  <thead>
-                    <tr><th>%</th><th>kN</th><th>mV/V</th></tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="r in negativeProfile" :key="`n-${r.percent}-${r.kn}`">
-                      <td>{{ r.percent }}</td><td>{{ r.kn }}</td><td>{{ r.mvv }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
+          <div class="panel-head-row mb-2">
+            <div class="panel-head">All Records</div>
+            <Button
+              label="New Record"
+              icon="pi pi-plus"
+              size="small"
+              :disabled="!canCreate"
+              @click="openNewRecordDialog"
+            />
           </div>
+          <div v-if="historicalRecords.length === 0" class="p-text-secondary">Select an item to list records.</div>
 
-          <div class="mt-3 p-text-secondary" v-else>Select an input sheet to view and create outputs.</div>
-        </section>
-      </div>
-    </div>
-
-    <div class="grid mt-1">
-      <div class="col-12 xl:col-8">
-        <section class="elite-panel">
-          <div class="panel-head mb-2">Input Sheet Document View</div>
-          <SheetDocumentPreview
-            v-if="selectedInput"
-            :title="selectedInputTemplateName"
-            :subtitle="`Sheet #${selectedInput.id} | ${selectedInput.sheetDate ?? ''}`"
-            :fields="selectedInputFields"
-            :values="selectedInputValues"
-          />
-          <div v-else class="p-text-secondary">Select an input to see document-style preview.</div>
-        </section>
-      </div>
-
-      <div class="col-12 xl:col-4">
-        <section class="elite-panel h-full">
-          <div class="panel-head mb-2">Historical Records</div>
-          <div v-if="historicalRecords.length === 0" class="p-text-secondary">No historical input/output records for this item.</div>
-          <div v-for="entry in historicalRecords" :key="entry.input.id" class="history-row">
+          <div
+            v-for="entry in historicalRecords"
+            :key="entry.input.id"
+            class="history-row"
+            :class="{ active: selectedRecordInputId === entry.input.id }"
+            @click="selectedRecordInputId = entry.input.id"
+          >
             <div class="history-top">
               <div>
                 <strong>#{{ entry.input.id }}</strong>
                 <span class="history-kind">{{ templateNames[entry.input.templateId] ?? `Template ${entry.input.templateId}` }}</span>
               </div>
-              <Button text size="small" label="Open" @click="selectedInput = entry.input" />
+              <small class="p-text-secondary">{{ entry.outputs.length }} output</small>
             </div>
             <small class="p-text-secondary">{{ entry.input.sheetDate ?? entry.input.createdAt }}</small>
-            <div class="history-output-tags">
-              <span v-for="out in entry.outputs" :key="out.id">
-                {{ templateNames[out.templateId] ?? `Output ${out.id}` }}
-              </span>
-              <small v-if="entry.outputs.length === 0" class="p-text-secondary">No outputs</small>
+          </div>
+        </section>
+      </div>
+
+      <div class="col-12 xl:col-5">
+        <section class="elite-panel h-full">
+          <div class="sheet-columns">
+            <div>
+              <SheetList
+                title="Input Sheets"
+                :sheets="inputSheets"
+                :selectedId="selectedInput?.id ?? null"
+                :templateNames="templateNames"
+                @select="(s) => (selectedRecordInputId = s.id)"
+              />
+            </div>
+
+            <div>
+              <SheetList
+                title="Output Sheets"
+                :sheets="selectedRecord?.outputs ?? []"
+                :selectedId="selectedOutput?.id ?? null"
+                :templateNames="templateNames"
+                @select="(s) => (selectedOutputId = s.id)"
+              >
+                <template #actions>
+                  <Button
+                    label="New Output"
+                    icon="pi pi-plus"
+                    size="small"
+                    :disabled="!canCreateOutput"
+                    @click="showNewOutput = true"
+                  />
+                </template>
+              </SheetList>
             </div>
           </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="grid mt-2">
+      <div class="col-12 xl:col-6">
+        <section class="elite-panel h-full">
+          <div class="panel-head mb-2">Input Sheet Document View</div>
+          <SheetDocumentPreview
+            v-if="selectedInput"
+            :title="selectedInputTemplateName"
+            :subtitle="`Sheet #${selectedInput.id} | ${selectedInput.sheetDate ?? selectedInput.createdAt}`"
+            :fields="selectedInputFields"
+            :values="selectedInputValues"
+          />
+          <div v-else class="p-text-secondary">Select an input record.</div>
+        </section>
+      </div>
+
+      <div class="col-12 xl:col-6">
+        <section class="elite-panel h-full">
+          <div class="panel-head mb-2">Output Sheet Document View</div>
+          <SheetDocumentPreview
+            v-if="selectedOutput"
+            :title="selectedOutputTemplateName"
+            :subtitle="`Sheet #${selectedOutput.id} | ${selectedOutput.sheetDate ?? selectedOutput.createdAt}`"
+            :fields="selectedOutputFields"
+            :values="selectedOutputValues"
+          />
+          <div v-else class="p-text-secondary">Select an output sheet.</div>
         </section>
       </div>
     </div>
@@ -354,11 +391,6 @@ loadTemplateLookup();
   letter-spacing: 0.03em;
 }
 
-.hero-sub {
-  color: #5d6473;
-  font-weight: 500;
-}
-
 .hero-stats {
   display: flex;
   gap: 0.5rem;
@@ -396,39 +428,10 @@ loadTemplateLookup();
   padding: 0.4rem 0.5rem 0;
 }
 
-.output-visual {
-  border-top: 1px dashed #cfd6e4;
-  padding-top: 0.8rem;
-}
-
-.visual-title {
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.load-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.79rem;
-  border: 1px solid #121315;
-}
-
-.load-table th,
-.load-table td {
-  border: 1px solid #121315;
-  text-align: center;
-  padding: 0.24rem;
-  font-weight: 700;
-}
-
-.load-table.blue tbody td {
-  background: #17a6da;
-  color: #031d28;
-}
-
-.load-table.red tbody td {
-  background: #d91f1f;
-  color: #2b0a0a;
+.panel-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .history-row {
@@ -437,6 +440,12 @@ loadTemplateLookup();
   padding: 0.55rem;
   margin-bottom: 0.6rem;
   background: #fafcff;
+  cursor: pointer;
+}
+
+.history-row.active {
+  border-color: #2d4f91;
+  box-shadow: 0 0 0 1px #2d4f91 inset;
 }
 
 .history-top {
@@ -452,41 +461,10 @@ loadTemplateLookup();
   font-size: 0.82rem;
 }
 
-.history-output-tags {
-  margin-top: 0.4rem;
-  display: flex;
-  gap: 0.35rem;
-  flex-wrap: wrap;
-}
-
-.history-output-tags span {
-  font-size: 0.73rem;
-  font-weight: 700;
-  background: #edf2ff;
-  color: #253f72;
-  border-radius: 999px;
-  padding: 0.16rem 0.42rem;
-}
-
-.rule-grid {
+.sheet-columns {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.8rem;
-}
-
-.rule-tags {
-  display: flex;
-  gap: 0.35rem;
-  flex-wrap: wrap;
-}
-
-.rule-tags span {
-  font-size: 0.73rem;
-  font-weight: 700;
-  background: #edf2ff;
-  color: #253f72;
-  border-radius: 999px;
-  padding: 0.16rem 0.42rem;
 }
 
 @media (max-width: 1280px) {
@@ -499,7 +477,7 @@ loadTemplateLookup();
     justify-content: flex-start;
   }
 
-  .rule-grid {
+  .sheet-columns {
     grid-template-columns: 1fr;
   }
 }

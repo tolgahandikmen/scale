@@ -12,7 +12,7 @@ import Divider from 'primevue/divider';
 import Dialog from 'primevue/dialog';
 
 import type { FieldDefinition, SheetTemplate, TemplateKind } from '@/models/form';
-import { getTemplates, getTemplateFields, createTemplateVersion, saveFieldsAsNewVersion } from '@/api/templatesApi';
+import scaleService from '@/services/ScaleService';
 import TableSchemaEditor from '@/components/forms/config/TableSchemaEditor.vue';
 
 const activeKind = ref<TemplateKind>('INPUT');
@@ -49,7 +49,7 @@ const duplicateKeys = computed(() => {
 const hasDuplicateKeys = computed(() => duplicateKeys.value.size > 0);
 
 async function loadTemplates() {
-  templates.value = await getTemplates(activeKind.value);
+  templates.value = await scaleService.getTemplates(activeKind.value);
   selectedTemplate.value = templates.value[0] ?? null;
 }
 
@@ -60,7 +60,7 @@ async function loadFields() {
     selectedField.value = null;
     return;
   }
-  const data = await getTemplateFields(selectedTemplate.value.id);
+  const data = await scaleService.getTemplateFields(selectedTemplate.value.id);
   fields.value = data.sort((a, b) => (a.orderNo ?? 0) - (b.orderNo ?? 0));
   selectedField.value = fields.value[0] ?? null;
 }
@@ -147,7 +147,7 @@ function ensureTableSchema(fd: FieldDefinition) {
 async function saveAsNewVersion() {
   if (!selectedTemplate.value || hasDuplicateKeys.value) return;
   fields.value.forEach((f, i) => (f.orderNo = (i + 1) * 10));
-  const res = await saveFieldsAsNewVersion({ templateId: selectedTemplate.value.id, fields: fields.value });
+  const res = await scaleService.saveFieldsAsNewVersion({ templateId: selectedTemplate.value.id, fields: fields.value });
   alert(`Saved as new version: ${res.name} (v${res.version})`);
   await loadTemplates();
   await loadFields();
@@ -157,7 +157,7 @@ async function createNewTemplate() {
   const name = newTemplateName.value.trim();
   const code = newTemplateCode.value.trim();
   if (!name || !code) return alert('Name & code required');
-  await createTemplateVersion({ name, code, kind: activeKind.value });
+  await scaleService.createTemplateVersion({ name, code, kind: activeKind.value });
   showNewTemplate.value = false;
   newTemplateName.value = '';
   newTemplateCode.value = '';
@@ -372,4 +372,5 @@ async function createNewTemplate() {
     </Dialog>
   </div>
 </template>
+
 

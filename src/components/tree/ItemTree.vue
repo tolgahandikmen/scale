@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import Tree from 'primevue/tree';
 import InputText from 'primevue/inputtext';
 import type { TreeNode } from 'primevue/treenode';
-import { getItemsTree } from '@/api/itemsApi';
+import scaleService from '@/services/ScaleService';
 import type { ItemTreeNode } from '@/models/form';
 
 const emit = defineEmits<{
@@ -69,7 +69,7 @@ function collectExpandKeys(nodes: TreeNode[]): Record<string, boolean> {
 const treeNodes = computed<TreeNode[]>(() => toTreeNodes(filteredRaw.value));
 
 onMounted(async () => {
-  raw.value = await getItemsTree();
+  raw.value = await scaleService.getItemsTree();
 });
 
 watch([searchTerm, treeNodes], () => {
@@ -133,3 +133,4 @@ function onNodeSelect(node: TreeNode) {
   font-weight: 500;
 }
 </style>
+

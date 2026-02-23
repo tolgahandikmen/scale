@@ -1,12 +1,12 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { watch, ref, computed } from 'vue';
 import Dialog from 'primevue/dialog';
 import Dropdown from 'primevue/dropdown';
 import Button from 'primevue/button';
 import Calendar from 'primevue/calendar';
 import DynamicForm from './DynamicForm.vue';
-import { getTemplates, getTemplateFields } from '@/api/templatesApi';
-import { createSheet } from '@/api/sheetsApi';
+import scaleService from '@/services/ScaleService';
+
 import type { FieldDefinition, SheetTemplate, TemplateKind, ValuesMap } from '@/models/form';
 
 const props = defineProps<{
@@ -39,7 +39,7 @@ watch(
   () => props.visible,
   async (v) => {
     if (!v) return;
-    templates.value = await getTemplates(props.kind);
+    templates.value = await scaleService.getTemplates(props.kind);
     selectedTemplate.value = filteredTemplates.value[0] ?? null;
   },
 );
@@ -59,7 +59,7 @@ watch(
   () => selectedTemplate.value?.id,
   async (id) => {
     if (!id) return;
-    fields.value = await getTemplateFields(id);
+    fields.value = await scaleService.getTemplateFields(id);
     values.value = {};
   },
 );
@@ -88,7 +88,7 @@ async function save() {
   }
 
   try {
-    await createSheet(payload);
+    await scaleService.createSheet(payload);
     emit('saved');
     emit('update:visible', false);
   } catch (e: any) {
@@ -130,3 +130,5 @@ function close() {
     </template>
   </Dialog>
 </template>
+
+

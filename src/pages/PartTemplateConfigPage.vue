@@ -6,9 +6,9 @@ import MultiSelect from 'primevue/multiselect';
 import Button from 'primevue/button';
 import Tag from 'primevue/tag';
 
-import { getTemplates } from '@/api/templatesApi';
-import { listPartIds } from '@/api/itemsApi';
-import { listPartTemplateMappings, savePartTemplateMapping } from '@/api/partTemplateMappingsApi';
+import scaleService from '@/services/ScaleService';
+
+
 import type { PartTemplateMapping, SheetTemplate } from '@/models/form';
 
 type RowVm = {
@@ -32,10 +32,10 @@ const templateNameMap = computed<Record<number, string>>(() => {
 
 async function load() {
   const [ins, outs, parts, currentMappings] = await Promise.all([
-    getTemplates('INPUT'),
-    getTemplates('OUTPUT'),
-    listPartIds(),
-    listPartTemplateMappings(),
+    scaleService.getTemplates('INPUT'),
+    scaleService.getTemplates('OUTPUT'),
+    scaleService.listPartIds(),
+    scaleService.listPartTemplateMappings(),
   ]);
 
   inputTemplates.value = ins;
@@ -55,7 +55,7 @@ async function load() {
 }
 
 async function saveRow(row: RowVm) {
-  const saved = await savePartTemplateMapping({
+  const saved = await scaleService.savePartTemplateMapping({
     partId: row.partId,
     inputTemplateIds: row.inputTemplateIds,
     outputTemplateIds: row.outputTemplateIds,
@@ -144,3 +144,4 @@ onMounted(load);
     </div>
   </div>
 </template>
+
