@@ -1,11 +1,11 @@
-<script setup lang="ts">
+<script setup>
 import { ref } from 'vue';
 import Button from 'primevue/button';
 import ItemSheetsPage from '@/pages/ItemSheetsPage.vue';
 import ConfigTemplatesPage from '@/pages/ConfigTemplatesPage.vue';
 import PartTemplateConfigPage from '@/pages/PartTemplateConfigPage.vue';
 
-const page = ref<'sheets' | 'config' | 'part-map'>('sheets');
+const page = ref('sheets');
 </script>
 
 <template>

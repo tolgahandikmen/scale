@@ -1,17 +1,19 @@
-<script setup lang="ts">
+<script setup>
 import InputNumber from 'primevue/inputnumber';
 import Dropdown from 'primevue/dropdown';
-import type { FieldDefinition, FieldValuePrimitive } from '@/models/form';
 
-const props = defineProps<{ field: FieldDefinition; modelValue: FieldValuePrimitive }>();
-const emit = defineEmits<{ (e: 'update:modelValue', v: FieldValuePrimitive): void }>();
+const props = defineProps({
+  field: { type: Object, required: true },
+  modelValue: { type: Object, default: null },
+});
+const emit = defineEmits(['update:modelValue']);
 
-const mv = () => props.modelValue as { value?: number | null; unit?: string | null };
+const mv = () => props.modelValue ?? {};
 
-function setNumber(v: number | null) {
+function setNumber(v) {
   emit('update:modelValue', { type: 'NUMBER', value: v, unit: mv().unit ?? null });
 }
-function setUnit(u: string | null | undefined) {
+function setUnit(u) {
   emit('update:modelValue', { type: 'NUMBER', value: mv().value ?? null, unit: u ?? null });
 }
 </script>

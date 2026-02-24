@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup>
 import { watch, ref, computed } from 'vue';
 import Dialog from 'primevue/dialog';
 import Dropdown from 'primevue/dropdown';
@@ -7,26 +7,21 @@ import Calendar from 'primevue/calendar';
 import DynamicForm from './DynamicForm.vue';
 import scaleService from '@/services/ScaleService';
 
-import type { FieldDefinition, SheetTemplate, TemplateKind, ValuesMap } from '@/models/form';
+const props = defineProps({
+  visible: { type: Boolean, default: false },
+  kind: { type: String, required: true },
+  itemId: { type: Number, required: true },
+  parentSheetId: { type: Number, default: undefined },
+  allowedTemplateIds: { type: Array, default: () => [] },
+});
 
-const props = defineProps<{
-  visible: boolean;
-  kind: TemplateKind;
-  itemId: number;
-  parentSheetId?: number;
-  allowedTemplateIds?: number[];
-}>();
+const emit = defineEmits(['update:visible', 'saved']);
 
-const emit = defineEmits<{
-  (e: 'update:visible', v: boolean): void;
-  (e: 'saved'): void;
-}>();
-
-const templates = ref<SheetTemplate[]>([]);
-const selectedTemplate = ref<SheetTemplate | null>(null);
-const fields = ref<FieldDefinition[]>([]);
-const values = ref<ValuesMap>({});
-const sheetDate = ref<Date | null>(new Date());
+const templates = ref([]);
+const selectedTemplate = ref(null);
+const fields = ref([]);
+const values = ref({});
+const sheetDate = ref(new Date());
 
 const header = computed(() => (props.kind === 'INPUT' ? 'New Input Sheet' : 'New Output Sheet'));
 const filteredTemplates = computed(() => {
@@ -67,14 +62,7 @@ watch(
 async function save() {
   if (!selectedTemplate.value) return;
 
-  const payload: {
-    itemId: number;
-    templateId: number;
-    sheetDate?: string;
-    parentSheetId?: number;
-    outputTemplateId?: number;
-    values: ValuesMap;
-  } = {
+  const payload = {
     itemId: props.itemId,
     templateId: selectedTemplate.value.id,
     sheetDate: sheetDate.value ? sheetDate.value.toISOString().slice(0, 10) : undefined,
@@ -91,7 +79,7 @@ async function save() {
     await scaleService.createSheet(payload);
     emit('saved');
     emit('update:visible', false);
-  } catch (e: any) {
+  } catch (e) {
     const status = e?.response?.status;
     if (status === 409) alert('This output format already exists for this input sheet.');
     else alert('Save failed.');
@@ -130,5 +118,3 @@ function close() {
     </template>
   </Dialog>
 </template>
-
-

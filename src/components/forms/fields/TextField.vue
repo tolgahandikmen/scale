@@ -1,11 +1,13 @@
-<script setup lang="ts">
+<script setup>
 import InputText from 'primevue/inputtext';
-import type { FieldDefinition, FieldValuePrimitive } from '@/models/form';
 
-const props = defineProps<{ field: FieldDefinition; modelValue: FieldValuePrimitive }>();
-const emit = defineEmits<{ (e: 'update:modelValue', v: FieldValuePrimitive): void }>();
+const props = defineProps({
+  field: { type: Object, required: true },
+  modelValue: { type: Object, default: null },
+});
+const emit = defineEmits(['update:modelValue']);
 
-function setValue(v: string | undefined) {
+function setValue(v) {
   emit('update:modelValue', { type: 'TEXT', value: v ?? '' });
 }
 </script>
@@ -13,8 +15,8 @@ function setValue(v: string | undefined) {
 <template>
   <label class="font-semibold mb-1 block">{{ field.label }}</label>
   <InputText
-    :modelValue="(props.modelValue as any).value ?? ''"
+    :modelValue="props.modelValue?.value ?? ''"
     @update:modelValue="setValue"
-    :class="{ 'p-invalid': field.required && !((props.modelValue as any).value) }"
+    :class="{ 'p-invalid': field.required && !(props.modelValue?.value) }"
   />
 </template>

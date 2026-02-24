@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup>
 import { computed, ref, watch } from 'vue';
 import Button from 'primevue/button';
 
@@ -7,55 +7,49 @@ import SheetList from '@/components/forms/SheetList.vue';
 import NewSheetDialog from '@/components/forms/NewSheetDialog.vue';
 import SheetDocumentPreview from '@/components/forms/SheetDocumentPreview.vue';
 
-import type { FieldDefinition, SheetInstance, SheetTemplate, ValuesMap } from '@/models/form';
 import scaleService from '@/services/ScaleService';
 
-type HistoricalBundle = {
-  input: SheetInstance;
-  outputs: SheetInstance[];
-};
+const selectedItemId = ref(null);
+const selectedPartId = ref(null);
 
-const selectedItemId = ref<number | null>(null);
-const selectedPartId = ref<string | null>(null);
+const inputSheets = ref([]);
+const historicalRecords = ref([]);
+const selectedRecordInputId = ref(null);
+const selectedOutputId = ref(null);
 
-const inputSheets = ref<SheetInstance[]>([]);
-const historicalRecords = ref<HistoricalBundle[]>([]);
-const selectedRecordInputId = ref<number | null>(null);
-const selectedOutputId = ref<number | null>(null);
+const selectedInputFields = ref([]);
+const selectedInputValues = ref({});
+const selectedOutputFields = ref([]);
+const selectedOutputValues = ref({});
 
-const selectedInputFields = ref<FieldDefinition[]>([]);
-const selectedInputValues = ref<ValuesMap>({});
-const selectedOutputFields = ref<FieldDefinition[]>([]);
-const selectedOutputValues = ref<ValuesMap>({});
-
-const templateLookup = ref<Record<number, SheetTemplate>>({});
-const allowedInputTemplateIds = ref<number[]>([]);
-const allowedOutputTemplateIds = ref<number[]>([]);
+const templateLookup = ref({});
+const allowedInputTemplateIds = ref([]);
+const allowedOutputTemplateIds = ref([]);
 
 const showNewInput = ref(false);
 const showNewOutput = ref(false);
 
-const templateNames = computed<Record<number, string>>(() => {
-  const map: Record<number, string> = {};
+const templateNames = computed(() => {
+  const map = {};
   Object.values(templateLookup.value).forEach((t) => {
     map[t.id] = `${t.name} (v${t.version})`;
   });
   return map;
 });
 
-const selectedRecord = computed<HistoricalBundle | null>(() => {
+const selectedRecord = computed(() => {
   if (!selectedRecordInputId.value) return null;
   return historicalRecords.value.find((r) => r.input.id === selectedRecordInputId.value) ?? null;
 });
 
-const selectedInput = computed<SheetInstance | null>(() => selectedRecord.value?.input ?? null);
+const selectedInput = computed(() => selectedRecord.value?.input ?? null);
 
 const selectedInputTemplateName = computed(() => {
   if (!selectedInput.value) return 'Input Sheet';
   return templateNames.value[selectedInput.value.templateId] ?? `Template ${selectedInput.value.templateId}`;
 });
 
-const selectedOutput = computed<SheetInstance | null>(() => {
+const selectedOutput = computed(() => {
   if (!selectedOutputId.value || !selectedRecord.value) return null;
   return selectedRecord.value.outputs.find((o) => o.id === selectedOutputId.value) ?? null;
 });
@@ -68,13 +62,13 @@ const selectedOutputTemplateName = computed(() => {
 const canCreate = computed(() => selectedItemId.value != null);
 const canCreateOutput = computed(() => selectedItemId.value != null && selectedInput.value != null);
 
-function getSheetTimestamp(sheet: SheetInstance): number {
+function getSheetTimestamp(sheet) {
   const raw = sheet.sheetDate ?? sheet.createdAt;
   const ts = Date.parse(raw);
   return Number.isNaN(ts) ? 0 : ts;
 }
 
-function sortByLatest(sheets: SheetInstance[]): SheetInstance[] {
+function sortByLatest(sheets) {
   return [...sheets].sort((a, b) => getSheetTimestamp(b) - getSheetTimestamp(a));
 }
 
@@ -84,7 +78,7 @@ async function loadTemplateLookup() {
     scaleService.getTemplates('OUTPUT'),
   ]);
 
-  templateLookup.value = [...inputs, ...outputs].reduce<Record<number, SheetTemplate>>((acc, t) => {
+  templateLookup.value = [...inputs, ...outputs].reduce((acc, t) => {
     acc[t.id] = t;
     return acc;
   }, {});

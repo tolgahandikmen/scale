@@ -1,11 +1,13 @@
-<script setup lang="ts">
+<script setup>
 import Dropdown from 'primevue/dropdown';
-import type { FieldDefinition, FieldValuePrimitive } from '@/models/form';
 
-const props = defineProps<{ field: FieldDefinition; modelValue: FieldValuePrimitive }>();
-const emit = defineEmits<{ (e: 'update:modelValue', v: FieldValuePrimitive): void }>();
+const props = defineProps({
+  field: { type: Object, required: true },
+  modelValue: { type: Object, default: null },
+});
+const emit = defineEmits(['update:modelValue']);
 
-function setValue(v: string | null | undefined) {
+function setValue(v) {
   emit('update:modelValue', { type: 'DROPDOWN', value: v ?? null });
 }
 </script>
@@ -15,7 +17,7 @@ function setValue(v: string | null | undefined) {
   <Dropdown
     class="w-full"
     :options="props.field.dropdownOptions ?? []"
-    :modelValue="(props.modelValue as any).value ?? null"
+    :modelValue="props.modelValue?.value ?? null"
     @update:modelValue="setValue"
   />
 </template>

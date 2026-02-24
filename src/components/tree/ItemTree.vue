@@ -1,22 +1,18 @@
-﻿<script setup lang="ts">
+<script setup>
 import { computed, onMounted, ref, watch } from 'vue';
 import Tree from 'primevue/tree';
 import InputText from 'primevue/inputtext';
-import type { TreeNode } from 'primevue/treenode';
 import scaleService from '@/services/ScaleService';
-import type { ItemTreeNode } from '@/models/form';
 
-const emit = defineEmits<{
-  (e: 'selectItem', itemId: number): void;
-}>();
+const emit = defineEmits(['selectItem']);
 
-const raw = ref<ItemTreeNode[]>([]);
-const selectedKey = ref<Record<string, boolean>>({});
-const expandedKeys = ref<Record<string, boolean>>({});
+const raw = ref([]);
+const selectedKey = ref({});
+const expandedKeys = ref({});
 const searchTerm = ref('');
 
-function filterNodes(nodes: ItemTreeNode[], term: string): ItemTreeNode[] {
-  return nodes.reduce<ItemTreeNode[]>((acc, node) => {
+function filterNodes(nodes, term) {
+  return nodes.reduce((acc, node) => {
     const children = node.children ? filterNodes(node.children, term) : [];
     const haystack = `${node.label} ${node.type} ${node.itemId ?? ''}`.toLowerCase();
     const selfMatch = haystack.includes(term);
@@ -34,13 +30,13 @@ function filterNodes(nodes: ItemTreeNode[], term: string): ItemTreeNode[] {
   }, []);
 }
 
-const filteredRaw = computed<ItemTreeNode[]>(() => {
+const filteredRaw = computed(() => {
   const q = searchTerm.value.trim().toLowerCase();
   if (!q) return raw.value;
   return filterNodes(raw.value, q);
 });
 
-function toTreeNodes(nodes: ItemTreeNode[]): TreeNode[] {
+function toTreeNodes(nodes) {
   return nodes.map((n) => ({
     key: n.key,
     label: n.label,
@@ -50,9 +46,9 @@ function toTreeNodes(nodes: ItemTreeNode[]): TreeNode[] {
   }));
 }
 
-function collectExpandKeys(nodes: TreeNode[]): Record<string, boolean> {
-  const keys: Record<string, boolean> = {};
-  const walk = (list: TreeNode[]) => {
+function collectExpandKeys(nodes) {
+  const keys = {};
+  const walk = (list) => {
     list.forEach((node) => {
       if (typeof node.key === 'string') {
         keys[node.key] = true;
@@ -66,7 +62,7 @@ function collectExpandKeys(nodes: TreeNode[]): Record<string, boolean> {
   return keys;
 }
 
-const treeNodes = computed<TreeNode[]>(() => toTreeNodes(filteredRaw.value));
+const treeNodes = computed(() => toTreeNodes(filteredRaw.value));
 
 onMounted(async () => {
   raw.value = await scaleService.getItemsTree();
@@ -78,8 +74,8 @@ watch([searchTerm, treeNodes], () => {
   }
 });
 
-function onNodeSelect(node: TreeNode) {
-  const data = node.data as ItemTreeNode | undefined;
+function onNodeSelect(node) {
+  const data = node?.data;
   if (data?.type === 'BRIDGE' && data.itemId) {
     emit('selectItem', data.itemId);
   }
@@ -133,4 +129,3 @@ function onNodeSelect(node: TreeNode) {
   font-weight: 500;
 }
 </style>
-

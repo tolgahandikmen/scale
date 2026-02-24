@@ -1,16 +1,12 @@
-﻿<script setup lang="ts">
-import type { SheetInstance } from '@/models/form';
+<script setup>
+defineProps({
+  title: { type: String, required: true },
+  sheets: { type: Array, default: () => [] },
+  selectedId: { type: Number, default: null },
+  templateNames: { type: Object, default: () => ({}) },
+});
 
-defineProps<{
-  title: string;
-  sheets: SheetInstance[];
-  selectedId?: number | null;
-  templateNames?: Record<number, string>;
-}>();
-
-const emit = defineEmits<{
-  (e: 'select', sheet: SheetInstance): void;
-}>();
+const emit = defineEmits(['select']);
 </script>
 
 <template>

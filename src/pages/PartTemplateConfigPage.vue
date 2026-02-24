@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup>
 import { computed, onMounted, ref } from 'vue';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
@@ -8,22 +8,12 @@ import Tag from 'primevue/tag';
 
 import scaleService from '@/services/ScaleService';
 
+const inputTemplates = ref([]);
+const outputTemplates = ref([]);
+const rows = ref([]);
 
-import type { PartTemplateMapping, SheetTemplate } from '@/models/form';
-
-type RowVm = {
-  partId: string;
-  inputTemplateIds: number[];
-  outputTemplateIds: number[];
-  updatedAt: string;
-};
-
-const inputTemplates = ref<SheetTemplate[]>([]);
-const outputTemplates = ref<SheetTemplate[]>([]);
-const rows = ref<RowVm[]>([]);
-
-const templateNameMap = computed<Record<number, string>>(() => {
-  const map: Record<number, string> = {};
+const templateNameMap = computed(() => {
+  const map = {};
   [...inputTemplates.value, ...outputTemplates.value].forEach((t) => {
     map[t.id] = `${t.name} (v${t.version})`;
   });
@@ -41,7 +31,7 @@ async function load() {
   inputTemplates.value = ins;
   outputTemplates.value = outs;
 
-  const mappingByPart = currentMappings.reduce<Record<string, PartTemplateMapping>>((acc, cur) => {
+  const mappingByPart = currentMappings.reduce((acc, cur) => {
     acc[cur.partId] = cur;
     return acc;
   }, {});
@@ -54,7 +44,7 @@ async function load() {
   }));
 }
 
-async function saveRow(row: RowVm) {
+async function saveRow(row) {
   const saved = await scaleService.savePartTemplateMapping({
     partId: row.partId,
     inputTemplateIds: row.inputTemplateIds,
@@ -119,11 +109,11 @@ onMounted(load);
             <div class="text-sm">
               <div>
                 <strong>IN:</strong>
-                {{ data.inputTemplateIds.map((id: number) => templateNameMap[id] ?? id).join(', ') || '-' }}
+                {{ data.inputTemplateIds.map((id) => templateNameMap[id] ?? id).join(', ') || '-' }}
               </div>
               <div>
                 <strong>OUT:</strong>
-                {{ data.outputTemplateIds.map((id: number) => templateNameMap[id] ?? id).join(', ') || '-' }}
+                {{ data.outputTemplateIds.map((id) => templateNameMap[id] ?? id).join(', ') || '-' }}
               </div>
             </div>
           </template>
@@ -144,4 +134,3 @@ onMounted(load);
     </div>
   </div>
 </template>
-

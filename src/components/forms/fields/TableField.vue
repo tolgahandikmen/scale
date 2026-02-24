@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup>
 import { computed, ref, watchEffect } from 'vue';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
@@ -6,17 +6,18 @@ import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
 import Dropdown from 'primevue/dropdown';
 
-import type { FieldDefinition, FieldValuePrimitive, TableColumnSchema } from '@/models/form';
+const props = defineProps({
+  field: { type: Object, required: true },
+  modelValue: { type: Object, default: null },
+});
+const emit = defineEmits(['update:modelValue']);
 
-const props = defineProps<{ field: FieldDefinition; modelValue: FieldValuePrimitive }>();
-const emit = defineEmits<{ (e: 'update:modelValue', v: FieldValuePrimitive): void }>();
+const mv = () => props.modelValue ?? {};
 
-const mv = () => props.modelValue as { value?: { rows?: Record<string, unknown>[] } };
-
-const rows = ref<Record<string, unknown>[]>([]);
+const rows = ref([]);
 
 const schema = computed(() => props.field.tableSchema);
-const columns = computed<TableColumnSchema[]>(() => schema.value?.columns ?? []);
+const columns = computed(() => schema.value?.columns ?? []);
 
 watchEffect(() => {
   const currentRows = mv()?.value?.rows ?? [];
@@ -27,7 +28,7 @@ watchEffect(() => {
 
   const defaults = schema.value?.defaultRows ?? [];
   const base = defaults.map((r) => {
-    const obj: Record<string, unknown> = {};
+    const obj = {};
     if (columns.value[0]) obj[columns.value[0].key] = typeof r === 'string' ? Number(r) : r;
     for (let i = 1; i < columns.value.length; i++) obj[columns.value[i].key] = null;
     return obj;
@@ -41,7 +42,7 @@ function commit() {
   emit('update:modelValue', { type: 'TABLE', value: { rows: rows.value } });
 }
 
-function setCell(rowIndex: number, colKey: string, val: unknown) {
+function setCell(rowIndex, colKey, val) {
   rows.value[rowIndex][colKey] = val;
   commit();
 }
@@ -55,7 +56,7 @@ function setCell(rowIndex: number, colKey: string, val: unknown) {
       <template #body="{ data, index }">
         <InputNumber
           v-if="c.type === 'NUMBER'"
-          :modelValue="data[c.key] as number | null"
+          :modelValue="data[c.key] ?? null"
           @update:modelValue="(v) => setCell(index, c.key, v)"
           :useGrouping="false"
           class="w-full"
@@ -63,13 +64,13 @@ function setCell(rowIndex: number, colKey: string, val: unknown) {
         <Dropdown
           v-else-if="c.type === 'DROPDOWN'"
           :options="c.dropdownOptions ?? []"
-          :modelValue="(data[c.key] as string | null) ?? null"
+          :modelValue="data[c.key] ?? null"
           @update:modelValue="(v) => setCell(index, c.key, v)"
           class="w-full"
         />
         <InputText
           v-else
-          :modelValue="(data[c.key] as string) ?? ''"
+          :modelValue="data[c.key] ?? ''"
           @update:modelValue="(v) => setCell(index, c.key, v ?? '')"
           class="w-full"
         />

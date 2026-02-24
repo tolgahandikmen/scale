@@ -1,6 +1,4 @@
-<script setup lang="ts">
-import type { FieldDefinition, FieldValuePrimitive } from '@/models/form';
-
+<script setup>
 import TextField from './fields/TextField.vue';
 import NumberField from './fields/NumberField.vue';
 import DateField from './fields/DateField.vue';
@@ -9,14 +7,12 @@ import DropdownField from './fields/DropdownField.vue';
 import MultiField from './fields/MultiField.vue';
 import TableField from './fields/TableField.vue';
 
-defineProps<{
-  field: FieldDefinition;
-  modelValue: FieldValuePrimitive;
-}>();
+defineProps({
+  field: { type: Object, required: true },
+  modelValue: { type: Object, default: null },
+});
 
-const emit = defineEmits<{
-  (e: 'update:modelValue', v: FieldValuePrimitive): void;
-}>();
+const emit = defineEmits(['update:modelValue']);
 </script>
 
 <template>

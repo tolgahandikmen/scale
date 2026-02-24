@@ -1,15 +1,14 @@
-﻿<script setup lang="ts">
+<script setup>
 import { computed } from 'vue';
-import type { FieldDefinition, ValuesMap, FieldValuePrimitive } from '@/models/form';
 
-const props = defineProps<{
-  title: string;
-  subtitle?: string;
-  fields: FieldDefinition[];
-  values: ValuesMap;
-}>();
+const props = defineProps({
+  title: { type: String, required: true },
+  subtitle: { type: String, default: '' },
+  fields: { type: Array, default: () => [] },
+  values: { type: Object, default: () => ({}) },
+});
 
-function stringify(value: FieldValuePrimitive | undefined): { unit: string; value: string } {
+function stringify(value) {
   if (!value) return { unit: '', value: '-' };
 
   if (value.type === 'TEXT' || value.type === 'DATE' || value.type === 'DROPDOWN') {

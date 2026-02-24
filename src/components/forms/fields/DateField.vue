@@ -1,18 +1,20 @@
-<script setup lang="ts">
+<script setup>
 import Calendar from 'primevue/calendar';
-import type { FieldDefinition, FieldValuePrimitive } from '@/models/form';
 
-const props = defineProps<{ field: FieldDefinition; modelValue: FieldValuePrimitive }>();
-const emit = defineEmits<{ (e: 'update:modelValue', v: FieldValuePrimitive): void }>();
+const props = defineProps({
+  field: { type: Object, required: true },
+  modelValue: { type: Object, default: null },
+});
+const emit = defineEmits(['update:modelValue']);
 
 function getDate() {
-  const raw = (props.modelValue as any)?.value;
+  const raw = props.modelValue?.value;
   if (!raw) return null;
   const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function setValue(v: Date | Date[] | (Date | null)[] | null | undefined) {
+function setValue(v) {
   if (v instanceof Date) {
     emit('update:modelValue', { type: 'DATE', value: v.toISOString().slice(0, 10) });
     return;

@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup>
 import { computed, onMounted, ref, watch } from 'vue';
 import TabView from 'primevue/tabview';
 import TabPanel from 'primevue/tabpanel';
@@ -11,23 +11,22 @@ import Checkbox from 'primevue/checkbox';
 import Divider from 'primevue/divider';
 import Dialog from 'primevue/dialog';
 
-import type { FieldDefinition, SheetTemplate, TemplateKind } from '@/models/form';
 import scaleService from '@/services/ScaleService';
 import TableSchemaEditor from '@/components/forms/config/TableSchemaEditor.vue';
 
-const activeKind = ref<TemplateKind>('INPUT');
+const activeKind = ref('INPUT');
 const activeIndex = computed({
   get: () => (activeKind.value === 'INPUT' ? 0 : 1),
-  set: (i: number) => {
+  set: (i) => {
     activeKind.value = i === 0 ? 'INPUT' : 'OUTPUT';
   },
 });
 
-const templates = ref<SheetTemplate[]>([]);
-const selectedTemplate = ref<SheetTemplate | null>(null);
+const templates = ref([]);
+const selectedTemplate = ref(null);
 
-const fields = ref<FieldDefinition[]>([]);
-const selectedField = ref<FieldDefinition | null>(null);
+const fields = ref([]);
+const selectedField = ref(null);
 const dirty = ref(false);
 
 const showNewTemplate = ref(false);
@@ -37,7 +36,7 @@ const newTemplateCode = ref('');
 const fieldTypeOptions = ['TEXT', 'NUMBER', 'DATE', 'DROPDOWN', 'BOOLEAN', 'TABLE'];
 
 const duplicateKeys = computed(() => {
-  const map = new Map<string, number>();
+  const map = new Map();
   for (const f of fields.value) {
     const key = f.key?.trim();
     if (!key) continue;
@@ -108,7 +107,7 @@ function addField() {
   markDirty();
 }
 
-function removeField(fd: FieldDefinition) {
+function removeField(fd) {
   const idx = fields.value.indexOf(fd);
   fields.value = fields.value.filter((f) => f !== fd);
   if (selectedField.value?.id === fd.id) {
@@ -117,7 +116,7 @@ function removeField(fd: FieldDefinition) {
   markDirty();
 }
 
-function move(fd: FieldDefinition, dir: -1 | 1) {
+function move(fd, dir) {
   const idx = fields.value.indexOf(fd);
   const j = idx + dir;
   if (j < 0 || j >= fields.value.length) return;
@@ -129,7 +128,7 @@ function move(fd: FieldDefinition, dir: -1 | 1) {
   markDirty();
 }
 
-function ensureTableSchema(fd: FieldDefinition) {
+function ensureTableSchema(fd) {
   if (fd.type !== 'TABLE') return;
   if (!fd.tableSchema) {
     fd.tableSchema = {
@@ -299,7 +298,7 @@ async function createNewTemplate() {
                 <InputText
                   class="w-full"
                   :modelValue="(selectedField.dropdownOptions ?? []).join(',')"
-                  @update:modelValue="(v)=>{ selectedField!.dropdownOptions = (v ?? '').split(',').map(s=>s.trim()).filter(Boolean); markDirty(); }"
+                  @update:modelValue="(v)=>{ selectedField.dropdownOptions = (v ?? '').split(',').map(s=>s.trim()).filter(Boolean); markDirty(); }"
                 />
               </div>
 
@@ -316,7 +315,7 @@ async function createNewTemplate() {
                 <InputText
                   class="w-full"
                   :modelValue="(selectedField.unitOptions ?? []).join(',')"
-                  @update:modelValue="(v)=>{ selectedField!.unitOptions = (v ?? '').split(',').map(s=>s.trim()).filter(Boolean); markDirty(); }"
+                  @update:modelValue="(v)=>{ selectedField.unitOptions = (v ?? '').split(',').map(s=>s.trim()).filter(Boolean); markDirty(); }"
                 />
               </div>
 
@@ -329,20 +328,20 @@ async function createNewTemplate() {
                   <InputText
                     class="w-full"
                     :modelValue="(selectedField.multiKeys ?? []).join(',')"
-                    @update:modelValue="(v)=>{ selectedField!.multiKeys = (v ?? '').split(',').map(s=>s.trim()).filter(Boolean); markDirty(); }"
+                    @update:modelValue="(v)=>{ selectedField.multiKeys = (v ?? '').split(',').map(s=>s.trim()).filter(Boolean); markDirty(); }"
                   />
                 </div>
               </div>
 
               <div v-if="selectedField.type === 'TABLE'">
                 <div v-if="!selectedField.tableSchema" class="mb-2">
-                  <Button label="Init Table Schema" icon="pi pi-wrench" size="small" @click="() => { ensureTableSchema(selectedField!); markDirty(); }" />
+                  <Button label="Init Table Schema" icon="pi pi-wrench" size="small" @click="() => { ensureTableSchema(selectedField); markDirty(); }" />
                 </div>
 
                 <TableSchemaEditor
                   v-if="selectedField.tableSchema"
                   :schema="selectedField.tableSchema"
-                  @update:schema="(s)=>{ selectedField!.tableSchema = s; markDirty(); }"
+                  @update:schema="(s)=>{ selectedField.tableSchema = s; markDirty(); }"
                 />
               </div>
             </div>
@@ -372,5 +371,3 @@ async function createNewTemplate() {
     </Dialog>
   </div>
 </template>
-
-

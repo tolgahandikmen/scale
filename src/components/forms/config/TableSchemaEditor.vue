@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup>
 import { computed, reactive, watchEffect } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
@@ -6,12 +6,13 @@ import Dropdown from 'primevue/dropdown';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import Divider from 'primevue/divider';
-import type { TableSchema, TableColumnSchema } from '@/models/form';
 
-const props = defineProps<{ schema: TableSchema }>();
-const emit = defineEmits<{ (e: 'update:schema', v: TableSchema): void }>();
+const props = defineProps({
+  schema: { type: Object, required: true },
+});
+const emit = defineEmits(['update:schema']);
 
-const state = reactive<TableSchema>({ rowMode: 'CONFIGURABLE', defaultRows: [], columns: [] });
+const state = reactive({ rowMode: 'CONFIGURABLE', defaultRows: [], columns: [] });
 
 watchEffect(() => {
   state.rowMode = props.schema.rowMode;
@@ -19,7 +20,7 @@ watchEffect(() => {
   state.columns = (props.schema.columns ?? []).map((c) => ({ ...c }));
 });
 
-const colTypeOptions: Array<TableColumnSchema['type']> = ['NUMBER', 'TEXT', 'DROPDOWN', 'BOOLEAN'];
+const colTypeOptions = ['NUMBER', 'TEXT', 'DROPDOWN', 'BOOLEAN'];
 const unitModeOptions = ['NONE', 'OPTIONAL', 'REQUIRED'];
 
 function commit() {
@@ -30,7 +31,7 @@ function commit() {
   });
 }
 
-function setDefaultRowsCsv(v: string | undefined) {
+function setDefaultRowsCsv(v) {
   state.defaultRows = (v ?? '')
     .split(',')
     .map((s) => s.trim())
@@ -53,7 +54,7 @@ function addColumn() {
   commit();
 }
 
-function removeColumn(c: TableColumnSchema) {
+function removeColumn(c) {
   state.columns = state.columns.filter((x) => x !== c);
   commit();
 }
@@ -63,7 +64,7 @@ const previewRows = computed(() => {
   const defaults = state.defaultRows ?? [];
 
   return defaults.map((r) => {
-    const obj: Record<string, unknown> = {};
+    const obj = {};
     cols.forEach((c, idx) => {
       obj[c.key] = idx === 0 ? r : '';
     });
